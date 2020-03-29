@@ -2,7 +2,7 @@
 
 use crate::{
     data_types::{CStr16, Char16},
-    proto::Protocol,
+    proto::{Protocol, device_path::DevicePath},
     table::boot::MemoryType,
     unsafe_guid, Handle, Status,
 };
@@ -19,7 +19,7 @@ pub struct LoadedImage {
 
     // Source location of the image
     device_handle: Handle,
-    _file_path: *const c_void, // TODO: not supported yet
+    file_path: *const DevicePath,
     _reserved: *const c_void,
 
     // Image load options
@@ -46,6 +46,18 @@ pub enum LoadOptionsError {
 }
 
 impl LoadedImage {
+    /// Get the device handle that the image was loaded from.
+    pub fn device_handle(&self) -> Handle {
+        self.device_handle
+    }
+
+    /// Get the file path that the image was loaded from.
+    pub fn file_path(&self) -> Option<&DevicePath> {
+        unsafe { 
+            self.file_path.as_ref()
+        }
+    }
+
     /// Get the load options of the given image. If the image was executed from the EFI shell, or from a boot
     /// option, this is the command line that was used to execute it as a string.
     pub fn load_options<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a str, LoadOptionsError> {
@@ -53,5 +65,25 @@ impl LoadedImage {
         let length =
             ucs2::decode(ucs2_slice, buffer).map_err(|_| LoadOptionsError::BufferTooSmall)?;
         core::str::from_utf8(&buffer[0..length]).map_err(|_| LoadOptionsError::NotValidUtf8)
+    }
+
+    /// Get the address that the image was loaded at.
+    pub fn image_base(&self) -> usize {
+        self.image_base
+    }
+
+    /// Get the size of the image.
+    pub fn image_size(&self) -> u64 {
+        self.image_size
+    }
+
+    /// Get the memory type of the image's code.
+    pub fn image_code_type(&self) -> MemoryType {
+        self.image_code_type
+    }
+
+    /// Get the memory type of the image's data.
+    pub fn image_data_type(&self) -> MemoryType {
+        self.image_code_type
     }
 }
