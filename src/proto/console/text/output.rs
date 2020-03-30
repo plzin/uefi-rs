@@ -88,7 +88,7 @@ impl<'boot> Output<'boot> {
     pub fn current_mode(&self) -> Result<Option<OutputMode>> {
         match self.data.mode {
             -1 => Ok(None.into()),
-            n if n > 0 => {
+            n if n >= 0 => {
                 let index = n as usize;
                 self.query_mode(index)
                     .map_inner(|dims| Some(OutputMode { index, dims }))
@@ -236,7 +236,7 @@ impl<'out, 'boot> Iterator for OutputModeIter<'out, 'boot> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.current;
-        if index < self.max {
+        if index <= self.max {
             self.current += 1;
 
             if let Ok(dims_completion) = self.output.query_mode(index) {
