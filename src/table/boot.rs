@@ -2,7 +2,7 @@
 
 use super::Header;
 use crate::data_types::Align;
-use crate::proto::Protocol;
+use crate::proto::{Protocol, device_path::DevicePath};
 use crate::{Event, Guid, Handle, Result, Status};
 #[cfg(feature = "exts")]
 use alloc_api::vec::Vec;
@@ -77,10 +77,26 @@ pub struct BootServices {
     install_configuration_table: usize,
 
     // Image services
-    load_image: usize,
-    start_image: usize,
-    exit: usize,
-    unload_image: usize,
+    load_image: extern "efiapi" fn(
+        boot_policy: bool,
+        parent_image_handle: Handle,
+        device_path: *const DevicePath,
+        source_buffer: *mut c_void,
+        source_size: usize,
+        image_handle: &mut Handle
+    ) -> Status,
+    start_image: unsafe extern "efiapi" fn(
+        image_handle: Handle,
+        exit_data_size: *mut usize,
+        exit_data: *mut *mut u16
+    ) -> Status,
+    exit: unsafe extern "efiapi" fn(
+        image_handle: Handle,
+        exit_status: Status,
+        exit_data_size: usize,
+        exit_data: *mut u16
+    ) -> Status,
+    unload_image: extern "efiapi" fn(image_handle: Handle) -> Status,
     exit_boot_services:
         unsafe extern "efiapi" fn(image_handle: Handle, map_key: MemoryMapKey) -> Status,
 
@@ -408,6 +424,40 @@ impl BootServices {
             (NULL_BUFFER, Status::BUFFER_TOO_SMALL) => Ok(buffer_len.into()),
             (_, other_status) => other_status.into_with_val(|| buffer_len),
         }
+    }
+
+    /// Load an EFI image from a given device path.
+    /// Returns a handle to the loaded image.
+    pub fn load_image_from_path(
+        &self,
+        boot_policy: bool,
+        parent_image_handle: Handle,
+        device_path: &DevicePath
+    ) -> Result<Handle> {
+        let mut handle = Handle(ptr::null_mut());
+        (self.load_image)(
+            boot_policy,
+            parent_image_handle,
+            device_path as *const _, 
+            ptr::null_mut(),
+            0,
+            &mut handle
+        ).into_with_val(|| handle)
+    }
+
+    /// Transfers control to a loaded image's entry point.
+    pub unsafe fn start_image(&self, image_handle: Handle) -> Result {
+        (self.start_image)(image_handle, ptr::null_mut(), ptr::null_mut()).into()
+    }
+
+    /// Unloads an EFI image.
+    pub fn unload_image(&self, image_handle: Handle) -> Result {
+        (self.unload_image)(image_handle).into()
+    }
+
+    /// Terminates a loaded EFI image and returns control to the boot services.
+    pub unsafe fn exit(&self, image_handle: Handle, exit_status: Status) -> Result {
+        (self.exit)(image_handle, exit_status, 0, ptr::null_mut()).into()
     }
 
     /// Exits the UEFI boot services
