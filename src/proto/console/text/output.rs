@@ -236,6 +236,7 @@ impl<'out, 'boot> Iterator for OutputModeIter<'out, 'boot> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.current;
+        // The mode at index 1 may not exist so self.max may be a valid index
         if index <= self.max {
             self.current += 1;
 
