@@ -55,7 +55,6 @@ pub struct RuntimeServices {
     get_next_high_monotonic_count: usize,
     reset: unsafe extern "efiapi" fn(
         rt: ResetType,
-
         status: Status,
         data_size: usize,
         data: *const u8,
@@ -124,7 +123,7 @@ impl RuntimeServices {
 
     /// Get the data stored with the variable.
     #[cfg(feature = "exts")]
-    pub fn get_variable(&self, variable: &Variable) -> Result<(Vec<u8>, u32)> {
+    pub fn get_variable(&self, variable: &Variable) -> Result<(Vec<u8>, VariableAttributes)> {
         let mut attributes = 0;
         let name_len = variable.name.as_str().chars().count();
         let mut name = vec![0; name_len + 1];
@@ -144,7 +143,7 @@ impl RuntimeServices {
                 Status::SUCCESS => {
                     // resize the vector to reflect the size of the data returned
                     data.truncate(data_size);
-                    return Ok(crate::Completion::new(Status::SUCCESS, (data, attributes)));
+                    return Ok(crate::Completion::new(Status::SUCCESS, (data, VariableAttributes::from_bits_truncate(attributes))));
                 },
                 Status::BUFFER_TOO_SMALL => {
                     // resize the buffer 
@@ -157,7 +156,7 @@ impl RuntimeServices {
 
     /// Sets the value of a variable. This service can be used to create a new variable, 
     /// modify the value of an existing variable, or to delete an existing variable.
-    pub fn set_variable(&self, variable: &Variable, attributes: u32, data: &[u8]) -> Result {
+    pub fn set_variable(&self, variable: &Variable, attributes: VariableAttributes, data: &[u8]) -> Result {
         let name_len = variable.name.as_str().chars().count();
         let mut name = vec![0; name_len + 1];
 
@@ -165,7 +164,7 @@ impl RuntimeServices {
             .map_err(|_| Status::INVALID_PARAMETER)?;
 
         (self.set_variable)(name.as_ptr() as *const Char16, &variable.vendor, 
-            attributes, data.len(), data.as_ptr() as *const c_void).into()
+            attributes.bits(), data.len(), data.as_ptr() as *const c_void).into()
     }
 
     /// Resets the computer.
@@ -189,6 +188,37 @@ impl super::Table for RuntimeServices {
     const SIGNATURE: u64 = 0x5652_4553_544e_5552;
 }
 
+bitflags! {
+    /// EFI Variable Attributes
+    pub struct VariableAttributes: u32 {
+        /// Variable's value persists across resets and power cycles.
+        const NON_VOLATILE = 1 << 0;
+
+        /// Variable can be accessed during boot time.
+        const BOOTSERVICE_ACCESS = 1 << 1;
+
+        /// Variable can be accessed during run time.
+        const RUNTIME_ACCESS = 1 << 2;
+
+        /// Variable contains Hardware Error Record data.
+        const HARDWARE_ERROR_RECORD = 1 << 3;
+
+        /// AUTHENTICATED_WRITE_ACCESS is deprecated and should be considered reserved.
+        const AUTHENTICATED_WRITE_ACCESS = 1 << 4;
+
+        /// When the attribute TIME_BASED_AUTHENTICATED_WRITE_ACCESS is set, then the Data buffer shall begin with 
+        /// an instance of a complete (and serialized) EFI_VARIABLE_AUTHENTICATION_2 descriptor.
+        const TIME_BASED_AUTHENTICATED_WRITE_ACCESS = 1 << 5;
+
+        /// SetVariable data is appended to the present data.
+        const APPEND_WRITE = 1 << 6;
+
+        /// This attribute indicates that the variable payload begins with an EFI_VARIABLE_AUTHENTICATION_3 structure, 
+        /// and potentially more structures as indicated by fields of this structure.
+        const ENHANCED_AUTHENTICATED_ACCESS = 1 << 7;
+    }
+}
+
 /// An EFI Variable
 #[cfg(feature = "exts")]
 #[derive(Debug, Clone)]
@@ -202,6 +232,9 @@ pub struct Variable {
 
 #[cfg(feature = "exts")]
 impl Variable {
+    /// Vendor GUID of all architectually defined variables.
+    pub const GLOBAL_VARIABLE_GUID: Guid = Guid::from_values(
+        0x8BE4DF61, 0x93CA, 0x11d2, 0xAA0D, [0x00, 0xE0, 0x98, 0x03, 0x2B, 0x8C]);
     /// Creates an EFI Variable from a variable name and the vendor guid.
     pub fn new(name: String, vendor: Guid) -> Variable {
         Variable {
