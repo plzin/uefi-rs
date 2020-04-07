@@ -35,7 +35,7 @@ impl DevicePathToText {
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it is the callers responsibility to free the buffer with
+    /// This function is unsafe because it is the callers responsibility to free the string with
     /// boot_services.free_pool.
     pub unsafe fn convert_device_node_to_text(
         &self,
@@ -55,7 +55,7 @@ impl DevicePathToText {
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it is the callers responsibility to free the buffer with
+    /// This function is unsafe because it is the callers responsibility to free the string with
     /// boot_services.free_pool.
     pub unsafe fn convert_device_path_to_text(
         &self,
@@ -79,11 +79,11 @@ impl DevicePathToText {
 pub struct DevicePathFromText {
     convert_text_to_device_node: unsafe extern "efiapi" fn(
         text_device_node: *const Char16
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
     
     convert_text_to_device_path: unsafe extern "efiapi" fn(
         text_device_path: *const Char16
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
 }
 
 impl DevicePathFromText {
@@ -93,8 +93,8 @@ impl DevicePathFromText {
     ///
     /// This function is unsafe because it is the callers responsibility to free the buffer with
     /// boot_services.free_pool.
-    pub unsafe fn convert_text_to_device_node(&self, text_device_node: &CStr16) -> Option<&DevicePath> {
-        (self.convert_text_to_device_node)(text_device_node.as_ptr()).as_ref()
+    pub unsafe fn convert_text_to_device_node(&self, text_device_node: &CStr16) -> *const DevicePath {
+        (self.convert_text_to_device_node)(text_device_node.as_ptr())
     }
 
     /// Converts a textual representation of a device path to a device path.
@@ -103,8 +103,8 @@ impl DevicePathFromText {
     /// 
     /// This function is unsafe because it is the callers responsibility to free the buffer with
     /// boot_services.free_pool.
-    pub unsafe fn convert_text_to_device_path(&self, text_device_path: &CStr16) -> Option<&DevicePath> {
-        (self.convert_text_to_device_path)(text_device_path.as_ptr()).as_ref()
+    pub unsafe fn convert_text_to_device_path(&self, text_device_path: &CStr16) -> *const DevicePath {
+        (self.convert_text_to_device_path)(text_device_path.as_ptr())
     }
 }
 
@@ -113,35 +113,35 @@ impl DevicePathFromText {
 #[unsafe_guid("0379BE4E-D706-437d-B037-EDB82FB772A4")]
 #[derive(Protocol)]
 pub struct DevicePathUtilities {
-    get_device_path_size: unsafe extern "efiapi" fn(
+    get_device_path_size: extern "efiapi" fn(
         device_path: *const DevicePath
     ) -> usize,
 
     duplicate_device_path: unsafe extern "efiapi" fn(
         device_path: *const DevicePath
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
 
     append_device_path: unsafe extern "efiapi" fn(
         src1: *const DevicePath,
         src2: *const DevicePath
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
 
     append_device_node: unsafe extern "efiapi" fn(
         device_path: *const DevicePath,
         device_node: *const DevicePath
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
 
     append_device_path_instance: unsafe extern "efiapi" fn(
         device_path: *const DevicePath,
         device_path_instance: *const DevicePath
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
 
     get_next_device_path_instance: unsafe extern "efiapi" fn(
-        device_path_instance: *const *mut DevicePath,
+        device_path_instance: &mut *const DevicePath,
         device_path_instance_size: *mut usize
-    ) -> *mut DevicePath,
+    ) -> *const DevicePath,
 
-    is_device_path_multi_instance: unsafe extern "efiapi" fn(
+    is_device_path_multi_instance: extern "efiapi" fn(
         device_path: *const DevicePath
     ) -> bool,
 
@@ -149,18 +149,34 @@ pub struct DevicePathUtilities {
         node_type: u8,
         node_sub_type: u8,
         node_length: u16
-    ) -> *mut DevicePath
+    ) -> *const DevicePath
 }
 
 impl DevicePathUtilities {
+    /// This function returns the size of the specified device path, 
+    /// in bytes, including the end-of-path tag.
+    pub fn get_device_path_size(&self, device_path: &DevicePath) -> usize {
+        (self.get_device_path_size)(device_path as *const _)
+    }
+
+    /// Create a duplicate of the specified path.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it is the callers responsibility to free the
+    /// the returned path with boot_services.free_pool.
+    pub unsafe fn duplicate_device_path(&self, device_path: &DevicePath) -> *const DevicePath {
+        (self.duplicate_device_path)(device_path as *const _)
+    }
+
     /// Creates a new device path by appending the second device path to the first.
     ///
     /// # Safety
     ///
     /// This function is unsafe because it is the callers responsibility to free the buffer with
     /// boot_services.free_pool.
-    pub unsafe fn append_device_path(&self, src1: &DevicePath, src2: &DevicePath) -> Option<&DevicePath> {
-        (self.append_device_path)(src1 as *const _, src2 as *const _).as_ref()
+    pub unsafe fn append_device_path(&self, src1: &DevicePath, src2: &DevicePath) -> *const DevicePath {
+        (self.append_device_path)(src1 as *const _, src2 as *const _)
     }
 
     /// Creates a new device path by appending the device node to the device path.
@@ -169,8 +185,8 @@ impl DevicePathUtilities {
     ///
     /// This function is unsafe because it is the callers responsibility to free the buffer with
     /// boot_services.free_pool.
-    pub unsafe fn append_device_node(&self, device_path: &DevicePath, device_node: &DevicePath) -> Option<&DevicePath> {
-        (self.append_device_node)(device_path as *const _, device_node as *const _).as_ref()
+    pub unsafe fn append_device_node(&self, device_path: &DevicePath, device_node: &DevicePath) -> *const DevicePath {
+        (self.append_device_node)(device_path as *const _, device_node as *const _)
     }
 
     /// Creates a new path by appending the device path instance to the device path.
@@ -183,7 +199,35 @@ impl DevicePathUtilities {
         &self, 
         device_path: &DevicePath, 
         device_path_instance: &DevicePath
-    ) -> Option<&DevicePath> {
-        (self.append_device_path_instance)(device_path as *const _, device_path_instance as *const _).as_ref()
+    ) -> *const DevicePath {
+        (self.append_device_path_instance)(device_path as *const _, device_path_instance as *const _)
+    }
+
+    /// Returns a copy of the current instance that has to be freed and the next instance.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it is the callers responsibility to free the copy of the
+    /// instace with boot_services.free_pool.
+    pub unsafe fn get_next_device_path_instance(&self, device_path_instance: &DevicePath) 
+        -> (*const DevicePath, *const DevicePath) {
+        let mut ptr = device_path_instance as *const _;
+        let copy = (self.get_next_device_path_instance)(&mut ptr, core::ptr::null_mut());
+        (copy, ptr)
+    }
+
+    /// Creates a device node.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it is the callers responsibility to free the newly created
+    /// devide node.
+    pub unsafe fn create_device_node(&self, node_type: u8, node_sub_type: u8, node_length: u16) -> *const DevicePath {
+        (self.create_device_node)(node_type, node_sub_type, node_length)
+    }
+
+    /// Returns whether a device path is multi-instance.
+    pub fn is_device_path_multi_instance(&self, device_path: &DevicePath) -> bool {
+        (self.is_device_path_multi_instance)(device_path as *const _)
     }
 }
