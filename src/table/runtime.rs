@@ -123,12 +123,12 @@ impl RuntimeServices {
 
     /// Get the data stored with the variable.
     #[cfg(feature = "exts")]
-    pub fn get_variable(&self, variable: &Variable) -> Result<(Vec<u8>, VariableAttributes)> {
+    pub fn get_variable(&self, variable_name: &str, vendor_guid: &Guid) -> Result<(Vec<u8>, VariableAttributes)> {
         let mut attributes = 0;
-        let name_len = variable.name.as_str().chars().count();
+        let name_len = variable_name.chars().count();
         let mut name = vec![0; name_len + 1];
 
-        ucs2::encode(variable.name.as_str(), &mut name[..name_len])
+        ucs2::encode(variable_name, &mut name[..name_len])
             .map_err(|_| Status::INVALID_PARAMETER)?;
 
         // use some default size to try to avoid a second call because of buffer size
@@ -138,12 +138,13 @@ impl RuntimeServices {
         // this might be called when multiple processors are running, so the data could get bigger
         // even after resizing the buffer, so this should be called in a loop
         loop {
-            match (self.get_variable)(name.as_ptr() as *const Char16, &variable.vendor, 
+            match (self.get_variable)(name.as_ptr() as *const Char16, vendor_guid, 
                 &mut attributes, &mut data_size, data.as_mut_ptr() as *mut c_void) {
                 Status::SUCCESS => {
                     // resize the vector to reflect the size of the data returned
                     data.truncate(data_size);
-                    return Ok(crate::Completion::new(Status::SUCCESS, (data, VariableAttributes::from_bits_truncate(attributes))));
+                    return Ok(crate::Completion::new(Status::SUCCESS,
+                            (data, VariableAttributes::from_bits_truncate(attributes))));
                 },
                 Status::BUFFER_TOO_SMALL => {
                     // resize the buffer 
@@ -156,14 +157,20 @@ impl RuntimeServices {
 
     /// Sets the value of a variable. This service can be used to create a new variable, 
     /// modify the value of an existing variable, or to delete an existing variable.
-    pub fn set_variable(&self, variable: &Variable, attributes: VariableAttributes, data: &[u8]) -> Result {
-        let name_len = variable.name.as_str().chars().count();
+    pub fn set_variable(
+        &self,
+        variable_name: &str,
+        vendor_guid: &Guid,
+        attributes: VariableAttributes,
+        data: &[u8]
+    ) -> Result {
+        let name_len = variable_name.chars().count();
         let mut name = vec![0; name_len + 1];
 
-        ucs2::encode(variable.name.as_str(), &mut name[..name_len])
+        ucs2::encode(variable_name, &mut name[..name_len])
             .map_err(|_| Status::INVALID_PARAMETER)?;
 
-        (self.set_variable)(name.as_ptr() as *const Char16, &variable.vendor, 
+        (self.set_variable)(name.as_ptr() as *const Char16, vendor_guid, 
             attributes.bits(), data.len(), data.as_ptr() as *const c_void).into()
     }
 
