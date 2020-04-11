@@ -24,7 +24,7 @@ pub struct LoadedImage {
 
     // Image load options
     load_options_size: u32,
-    load_options: *const Char16,
+    load_options: *const c_void,
 
     // Location where image was loaded
     image_base: usize,
@@ -46,6 +46,11 @@ pub enum LoadOptionsError {
 }
 
 impl LoadedImage {
+    /// Get the parent handle.
+    pub fn parent_handle(&self) -> Handle {
+        self.parent_handle
+    }
+
     /// Get the device handle that the image was loaded from.
     pub fn device_handle(&self) -> Handle {
         self.device_handle
@@ -61,7 +66,7 @@ impl LoadedImage {
     /// Get the load options of the given image. If the image was executed from the EFI shell, or from a boot
     /// option, this is the command line that was used to execute it as a string.
     pub fn load_options<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a str, LoadOptionsError> {
-        let ucs2_slice = unsafe { CStr16::from_ptr(self.load_options).to_u16_slice() };
+        let ucs2_slice = unsafe { CStr16::from_ptr(self.load_options as *const Char16).to_u16_slice() };
         let length =
             ucs2::decode(ucs2_slice, buffer).map_err(|_| LoadOptionsError::BufferTooSmall)?;
         core::str::from_utf8(&buffer[0..length]).map_err(|_| LoadOptionsError::NotValidUtf8)
@@ -85,5 +90,16 @@ impl LoadedImage {
     /// Get the memory type of the image's data.
     pub fn image_data_type(&self) -> MemoryType {
         self.image_code_type
+    }
+
+    /// Overwrite the parent handle.
+    pub fn overwrite_parent_handle(&mut self, parent_handle: Handle) {
+        self.parent_handle = parent_handle;
+    }
+
+    /// Overwrite the load options.
+    pub fn overwrite_load_options<'a>(&'a mut self, load_options: &'a [u8]) {
+        self.load_options_size = load_options.len() as u32;
+        self.load_options = load_options as *const _ as *const c_void
     }
 }

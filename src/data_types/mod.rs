@@ -5,12 +5,12 @@
 use core::ffi::c_void;
 
 /// Opaque handle to an UEFI entity (protocol, image...)
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Handle(pub *mut c_void);
 
 /// Handle to an event structure
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Event(pub *mut c_void);
 

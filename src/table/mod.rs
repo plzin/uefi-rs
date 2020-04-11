@@ -20,3 +20,5 @@ pub mod boot;
 pub mod runtime;
 
 pub mod cfg;
+
+pub mod dxe;

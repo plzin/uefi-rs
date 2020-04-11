@@ -1,15 +1,109 @@
 //! This module provides the Device Path protocol functionalities.
 
-use crate::{Char16, CStr16, unsafe_guid, proto::Protocol};
+use crate::{Char16, CStr16, unsafe_guid, newtype_enum, proto::Protocol};
 
 /// Represents a device path.
 #[repr(C)]
 #[unsafe_guid("09576e91-6d3f-11d2-8e39-00a0c969723b")]
 #[derive(Protocol)]
 pub struct DevicePath {
-    path_type: u8,
-    sub_type: u8,
-    length: u16,
+    /// The type of the node.
+    pub path_type: DevicePathType,
+
+    /// The sub type of the node.
+    pub sub_type: u8, // the data type of the sub type depends on the value of path_type
+
+    /// The length of the node in bytes.
+    pub length: u16,
+}
+
+impl DevicePath {
+    /// Determines whether this device path node marks the end of a device path.
+    pub fn is_end(&self) -> bool {
+        self.path_type == DevicePathType::END_OF_HARDWARE && self.sub_type == EndSubType::END_ENTIRE.0
+    }
+
+    /// Returns the next device path node in the path.
+    pub fn next_node(&self) -> &DevicePath {
+        // TODO: not really safe since the node might not be aligned
+        unsafe {
+            &*((self as *const _ as *const u8).add(self.length as usize) as *const DevicePath)
+        }
+    }
+}
+
+newtype_enum! {
+    /// Device path type
+    pub enum DevicePathType: u8 => #[allow(missing_docs)] {
+        HARDWARE = 0x1,
+        ACPI = 0x2,
+        MESSAGING = 0x3,
+        MEDIA = 0x4,
+        BIOS = 0x5,
+        END_OF_HARDWARE = 0x7f,
+    }
+}
+
+newtype_enum! {
+    /// Device subtype of a device of type Media.
+    pub enum MediaSubType: u8 => #[allow(missing_docs)] {
+        HARD_DRIVE = 0x1,
+        CD_ROM = 0x2,
+        VENDOR = 0x3,
+        FILE_PATH = 0x4,
+        MEDIA_PROTOCOL = 0x5,
+        PIWG_FIRMWARE_FILE = 0x6,
+        PIWG_FIRMWARE_VOLUME = 0x7,
+        RELATIVE_OFFSET_RANGE = 0x8,
+        RAM_DISK = 0x9,
+    }
+}
+
+newtype_enum! {
+    /// Subtype of a device path that has type END_OF_HARDWARE
+    pub enum EndSubType: u8 => #[allow(missing_docs)] {
+        END_INSTANCE = 0x01,
+        END_ENTIRE = 0xff,
+    }
+}
+
+/// Device path of a hard drive media
+#[repr(C)]
+pub struct HardDriveMediaDevicePath {
+    /// Device node header.
+    pub header: DevicePath,
+
+    /// Entry in the partition table (1-indexed).
+    pub partition_number: u32,
+
+    /// LBA of the partition start.
+    pub partition_start: u64,
+
+    /// Size of the parition in logical blocks.
+    pub partition_size: u64,
+
+    /// Signature unique to this partition.
+    pub signature: u128,
+
+    /// Partition format. (MBR, GPT, ...)
+    pub partition_format: u8,
+
+    /// The type of the signature.
+    pub signature_type: SignatureType,
+}
+
+newtype_enum! {
+    /// Signature type of a partition
+    pub enum SignatureType: u8 => {
+        /// No signature (signature field must be 0).
+        NONE = 0x00,
+
+        /// 32-bit signature from address 0x1b8 of the type 0x01 MBR.
+        MBR_SIGNATURE = 0x01,
+
+        /// 128-bit GUID signature.
+        GUID = 0x02,
+    }
 }
 
 /// Implements the protocol to convert from device paths/nodes to text.

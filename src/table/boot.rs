@@ -73,7 +73,11 @@ pub struct BootServices {
         buf_sz: &mut usize,
         buf: *mut Handle,
     ) -> Status,
-    locate_device_path: usize,
+    locate_device_path: extern "efiapi" fn(
+        protocol: &Guid,
+        devie_path: &mut *const DevicePath,
+        handle: &mut Handle
+    ) -> Status,
     install_configuration_table: usize,
 
     // Image services
@@ -111,8 +115,17 @@ pub struct BootServices {
     ) -> Status,
 
     // Driver support services
-    connect_controller: usize,
-    disconnect_controller: usize,
+    connect_controller: extern "efiapi" fn(
+        controller_handle: Handle,
+        driver_image_handle: *const Handle,
+        remaining_device_path: *const DevicePath,
+        recursive: bool
+    ) -> Status,
+    disconnect_controller: extern "efiapi" fn(
+        controller_handle: Handle,
+        driver_image_handle: Handle,
+        child_handle: Handle
+    ) -> Status,
 
     // Protocol open / close services
     open_protocol: usize,
@@ -121,7 +134,13 @@ pub struct BootServices {
 
     // Library services
     protocols_per_handle: usize,
-    locate_handle_buffer: usize,
+    locate_handle_buffer: unsafe extern "efiapi" fn(
+        search_type: i32,
+        guid: *const Guid,
+        search_key: *const c_void,
+        no_handles: &mut usize,
+        buffer: &mut *mut Handle
+    ) -> Status,
     locate_protocol: extern "efiapi" fn(
         proto: &Guid,
         registration: *mut c_void,
@@ -389,6 +408,25 @@ impl BootServices {
         })
     }
 
+    /// Returns an array of handles that support the requested protocol 
+    /// in a buffer allocated from pool.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because the buffer has to be freed manually.
+    pub unsafe fn locate_handle_buffer(&self, search_ty: SearchType) -> Result<&[Handle]> {
+        let (ty, guid, key) = match search_ty {
+            SearchType::AllHandles => (0, ptr::null(), ptr::null_mut()),
+            SearchType::ByProtocol(guid) => (2, guid as *const _, ptr::null_mut()),
+        };
+
+        let mut no = 0;
+        let mut buffer = ptr::null_mut();
+
+        (self.locate_handle_buffer)(ty, guid, key, &mut no, &mut buffer)
+            .into_with_val(|| core::slice::from_raw_parts(buffer, no))
+    }
+
     /// Enumerates all handles installed on the system which match a certain query.
     ///
     /// You should first call this function with `None` for the output buffer,
@@ -424,6 +462,34 @@ impl BootServices {
             (NULL_BUFFER, Status::BUFFER_TOO_SMALL) => Ok(buffer_len.into()),
             (_, other_status) => other_status.into_with_val(|| buffer_len),
         }
+    }
+
+    /// Locates the handle to a device on the device path that supports the specified protocol.
+    /// The handle and the remaining part of the device path is returned.
+    pub fn locate_device_path(&self, protocol: &Guid, device_path: &DevicePath) -> Result<(Handle, &DevicePath)> {
+        let mut ptr = device_path as *const _;
+        let mut handle = Handle(ptr::null_mut());
+        (self.locate_device_path)(protocol, &mut ptr, &mut handle)
+            .into_with_val(|| (handle, unsafe { &*ptr }))
+    }
+
+    /// Connects one or more drivers to a controller.
+    pub fn connect_controller(&self, 
+        controller_handle: Handle, 
+        remaining_device_path: Option<&DevicePath>, 
+        recursive: bool
+    ) -> Result {
+        let remaining_device_path = match remaining_device_path {
+            Some(p) => p as *const _,
+            None => ptr::null(),
+        };
+
+        (self.connect_controller)(controller_handle, ptr::null(), remaining_device_path, recursive).into()
+    }
+
+    /// Disconnects one or more drivers from a controller.
+    pub fn disconnect_controller(&self, controller_handle: Handle) -> Result {
+        (self.disconnect_controller)(controller_handle, Handle(ptr::null_mut()), Handle(ptr::null_mut())).into()
     }
 
     /// Load an EFI image from a given device path.
