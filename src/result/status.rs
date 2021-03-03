@@ -125,6 +125,7 @@ impl Status {
 
     /// Converts this status code into a result with a given value.
     #[inline]
+    #[allow(clippy::clippy::result_unit_err)]
     pub fn into_with_val<T>(self, val: impl FnOnce() -> T) -> Result<T, ()> {
         if !self.is_error() {
             Ok(Completion::new(self, val()))
@@ -163,10 +164,10 @@ impl Status {
 
 // An UEFI status is equivalent to a Result with no data or rerror payload
 
-impl Into<Result<(), ()>> for Status {
+impl From<Status> for Result<(), ()> {
     #[inline]
-    fn into(self) -> Result<(), ()> {
-        self.into_with(|| (), |_| ())
+    fn from(status: Status) -> Result<(), ()> {
+        status.into_with(|| (), |_| ())
     }
 }
 

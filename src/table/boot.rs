@@ -1,8 +1,11 @@
 //! UEFI services available during boot.
 
 use super::Header;
-use crate::data_types::Align;
-use crate::proto::{Protocol, device_path::DevicePath};
+use crate::proto::{
+    loaded_image::{DevicePath, LoadedImage},
+    Protocol,
+};
+use crate::{data_types::Align, proto::media::fs::SimpleFileSystem};
 use crate::{Event, Guid, Handle, Result, Status};
 #[cfg(feature = "exts")]
 use alloc_api::vec::Vec;
@@ -73,10 +76,10 @@ pub struct BootServices {
         buf_sz: &mut usize,
         buf: *mut Handle,
     ) -> Status,
-    locate_device_path: extern "efiapi" fn(
-        protocol: &Guid,
-        devie_path: &mut *const DevicePath,
-        handle: &mut Handle
+    locate_device_path: unsafe extern "efiapi" fn(
+        proto: &Guid,
+        device_path: &mut *mut DevicePath,
+        out_handle: *mut Handle,
     ) -> Status,
     install_configuration_table: usize,
 
@@ -240,10 +243,16 @@ impl BootServices {
     ///
     /// The returned key is a unique identifier of the current configuration of memory.
     /// Any allocations or such will change the memory map's key.
+    ///
+    /// If you want to store the resulting memory map without having to keep
+    /// the buffer around, you can use `.copied().collect()` on the iterator.
     pub fn memory_map<'buf>(
         &self,
         buffer: &'buf mut [u8],
-    ) -> Result<(MemoryMapKey, MemoryMapIter<'buf>)> {
+    ) -> Result<(
+        MemoryMapKey,
+        impl ExactSizeIterator<Item = &'buf MemoryDescriptor> + Clone,
+    )> {
         let mut map_size = buffer.len();
         MemoryDescriptor::assert_aligned(buffer);
         #[allow(clippy::cast_ptr_alignment)]
@@ -408,7 +417,7 @@ impl BootServices {
         })
     }
 
-    /// Returns an array of handles that support the requested protocol 
+    /// Returns an array of handles that support the requested protocol
     /// in a buffer allocated from pool.
     ///
     /// # Safety
@@ -464,19 +473,10 @@ impl BootServices {
         }
     }
 
-    /// Locates the handle to a device on the device path that supports the specified protocol.
-    /// The handle and the remaining part of the device path is returned.
-    pub fn locate_device_path(&self, protocol: &Guid, device_path: &DevicePath) -> Result<(Handle, &DevicePath)> {
-        let mut ptr = device_path as *const _;
-        let mut handle = Handle(ptr::null_mut());
-        (self.locate_device_path)(protocol, &mut ptr, &mut handle)
-            .into_with_val(|| (handle, unsafe { &*ptr }))
-    }
-
     /// Connects one or more drivers to a controller.
-    pub fn connect_controller(&self, 
-        controller_handle: Handle, 
-        remaining_device_path: Option<&DevicePath>, 
+    pub fn connect_controller(&self,
+        controller_handle: Handle,
+        remaining_device_path: Option<&DevicePath>,
         recursive: bool
     ) -> Result {
         let remaining_device_path = match remaining_device_path {
@@ -504,7 +504,7 @@ impl BootServices {
         (self.load_image)(
             boot_policy,
             parent_image_handle,
-            device_path as *const _, 
+            device_path as *const _,
             ptr::null_mut(),
             0,
             &mut handle
@@ -524,6 +524,16 @@ impl BootServices {
     /// Terminates a loaded EFI image and returns control to the boot services.
     pub unsafe fn exit(&self, image_handle: Handle, exit_status: Status) -> Result {
         (self.exit)(image_handle, exit_status, 0, ptr::null_mut()).into()
+    }
+
+    /// Locates the handle to a device on the device path that supports the specified protocol.
+    pub fn locate_device_path<P: Protocol>(&self, device_path: &mut DevicePath) -> Result<Handle> {
+        unsafe {
+            let mut handle = Handle::uninitialized();
+            let mut device_path_ptr = device_path as *mut DevicePath;
+            (self.locate_device_path)(&P::GUID, &mut device_path_ptr, &mut handle)
+                .into_with_val(|| handle)
+        }
     }
 
     /// Exits the UEFI boot services
@@ -655,6 +665,34 @@ impl BootServices {
             .into_with_val(|| buffer)
             .map(|completion| completion.with_status(status2))
     }
+
+    /// Retrieves the `SimpleFileSystem` protocol associated with
+    /// the device the given image was loaded from.
+    ///
+    /// You can retrieve the SFS protocol associated with the boot partition
+    /// by passing the image handle received by the UEFI entry point to this function.
+    pub fn get_image_file_system(
+        &self,
+        image_handle: Handle,
+    ) -> Result<&UnsafeCell<SimpleFileSystem>> {
+        let loaded_image = self
+            .handle_protocol::<LoadedImage>(image_handle)?
+            .expect("Failed to retrieve `LoadedImage` protocol from handle");
+        let loaded_image = unsafe { &*loaded_image.get() };
+
+        let device_handle = loaded_image.device();
+
+        let device_path = self
+            .handle_protocol::<DevicePath>(device_handle)?
+            .expect("Failed to retrieve `DevicePath` protocol from image's device handle");
+        let device_path = unsafe { &mut *device_path.get() };
+
+        let device_handle = self
+            .locate_device_path::<SimpleFileSystem>(device_path)?
+            .expect("Failed to locate `SimpleFileSystem` protocol on device path");
+
+        self.handle_protocol::<SimpleFileSystem>(device_handle)
+    }
 }
 
 impl super::Table for BootServices {
@@ -759,6 +797,15 @@ pub enum MemoryType: u32 => {
     PERSISTENT_MEMORY       = 14,
 }}
 
+impl MemoryType {
+    /// Construct a custom `MemoryType`. Values in the range `0x80000000..=0xffffffff` are free for use if you are
+    /// an OS loader.
+    pub const fn custom(value: u32) -> MemoryType {
+        assert!(value >= 0x80000000);
+        MemoryType(value)
+    }
+}
+
 /// Memory descriptor version number
 pub const MEMORY_DESCRIPTOR_VERSION: u32 = 1;
 
@@ -838,12 +885,8 @@ bitflags! {
 pub struct MemoryMapKey(usize);
 
 /// An iterator of memory descriptors
-///
-/// This type is only exposed in interfaces due to current limitations of
-/// `impl Trait` which may be lifted in the future. It is therefore recommended
-/// that you refrain from directly manipulating it in your code.
-#[derive(Debug)]
-pub struct MemoryMapIter<'buf> {
+#[derive(Debug, Clone)]
+struct MemoryMapIter<'buf> {
     buffer: &'buf [u8],
     entry_size: usize,
     index: usize,
@@ -874,7 +917,7 @@ impl<'buf> Iterator for MemoryMapIter<'buf> {
     }
 }
 
-impl<'buf> ExactSizeIterator for MemoryMapIter<'buf> {}
+impl ExactSizeIterator for MemoryMapIter<'_> {}
 
 /// The type of handle search to perform.
 #[derive(Debug, Copy, Clone)]

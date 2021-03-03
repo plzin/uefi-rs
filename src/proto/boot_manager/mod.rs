@@ -1,7 +1,7 @@
 //! Boot Manager Protocols
 
 use crate::{Status, Result, Guid, unsafe_guid};
-use crate::proto::{Protocol, device_path::DevicePath};
+use crate::proto::{Protocol, loaded_image::DevicePath};
 
 /// Boot Manager Policy Protocol
 #[repr(C)]

@@ -5,6 +5,7 @@ use crate::table::boot::MemoryDescriptor;
 use crate::{Result, Status, Guid};
 use crate::data_types::Char16;
 use bitflags::bitflags;
+use core::fmt;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::ffi::c_void;
@@ -313,7 +314,7 @@ impl<'a> Iterator for VariablesIterator<'a> {
 }
 
 /// The current time information
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Time {
     year: u16,  // 1900 - 9999
@@ -353,9 +354,9 @@ impl Time {
         time_zone: i16,
         daylight: Daylight,
     ) -> Self {
-        assert!(year >= 1900 && year <= 9999);
-        assert!(month >= 1 && month <= 12);
-        assert!(day >= 1 && day <= 31);
+        assert!((1900..=9999).contains(&year));
+        assert!((1..=12).contains(&month));
+        assert!((1..=31).contains(&day));
         assert!(hour <= 23);
         assert!(minute <= 59);
         assert!(second <= 59);
@@ -423,6 +424,18 @@ impl Time {
     /// Query the daylight savings time information
     pub fn daylight(&self) -> Daylight {
         self.daylight
+    }
+}
+
+impl fmt::Debug for Time {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}-{} ", self.year, self.month, self.day)?;
+        write!(
+            f,
+            "{}:{}:{}.{} ",
+            self.hour, self.minute, self.second, self.nanosecond
+        )?;
+        write!(f, "{} {:?}", self.time_zone, self.daylight)
     }
 }
 

@@ -6,6 +6,7 @@
 
 pub mod file;
 
+pub mod block;
 pub mod fs;
 
 pub mod block_io;

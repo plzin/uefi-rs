@@ -1,10 +1,12 @@
-use super::boot::{BootServices, MemoryMapIter};
-use super::runtime::RuntimeServices;
-use super::{cfg, Header, Revision};
-use crate::proto::console::text;
-use crate::{CStr16, Char16, Handle, Result, ResultExt, Status};
 use core::marker::PhantomData;
 use core::slice;
+
+use crate::proto::console::text;
+use crate::{CStr16, Char16, Handle, Result, ResultExt, Status};
+
+use super::boot::{BootServices, MemoryDescriptor};
+use super::runtime::RuntimeServices;
+use super::{cfg, Header, Revision};
 
 /// Marker trait used to provide different views of the UEFI System Table
 pub trait SystemTableView {}
@@ -131,11 +133,14 @@ impl SystemTable<Boot> {
     /// system table which more accurately reflects the state of the UEFI
     /// firmware following exit from boot services, along with a high-level
     /// iterator to the UEFI memory map.
-    pub fn exit_boot_services<'buf>(
+    pub fn exit_boot_services(
         self,
         image: Handle,
-        mmap_buf: &'buf mut [u8],
-    ) -> Result<(SystemTable<Runtime>, MemoryMapIter<'buf>)> {
+        mmap_buf: &mut [u8],
+    ) -> Result<(
+        SystemTable<Runtime>,
+        impl ExactSizeIterator<Item = &MemoryDescriptor> + Clone,
+    )> {
         unsafe {
             let boot_services = self.boot_services();
 
@@ -184,8 +189,9 @@ impl SystemTable<Boot> {
     }
 }
 
-// These parts of the UEFI System Table interface may only be used after exit
-// from UEFI boot services
+// These parts of the SystemTable struct are only visible after exit from UEFI
+// boot services. They provide unsafe access to the UEFI runtime services, which
+// which were already available before but in safe form.
 impl SystemTable<Runtime> {
     /// Access runtime services
     ///

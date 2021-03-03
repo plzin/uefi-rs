@@ -43,7 +43,7 @@ fn vec_alloc() {
 
     let mut values = vec![-5, 16, 23, 4, 0];
 
-    values.sort();
+    values.sort_unstable();
 
     assert_eq!(values[..], [-5, 0, 4, 16, 23], "Failed to sort vector");
 }
@@ -97,20 +97,25 @@ fn memory_map(bt: &BootServices) {
         buffer.set_len(buf_sz);
     }
 
-    let (_key, mut desc_iter) = bt
+    let (_key, desc_iter) = bt
         .memory_map(&mut buffer)
         .expect_success("Failed to retrieve UEFI memory map");
 
+    // Collect the descriptors into a vector
+    let descriptors = desc_iter.copied().collect::<Vec<_>>();
+
     // Ensured we have at least one entry.
     // Real memory maps usually have dozens of entries.
-    assert!(desc_iter.len() > 0, "Memory map is empty");
+    assert!(!descriptors.is_empty(), "Memory map is empty");
 
     // This is pretty much a sanity test to ensure returned memory isn't filled with random values.
-    let first_desc = desc_iter.next().unwrap();
+    let first_desc = descriptors[0];
 
-    let phys_start = first_desc.phys_start;
+    #[cfg(target_arch = "x86_64")]
+    {
+        let phys_start = first_desc.phys_start;
+        assert_eq!(phys_start, 0, "Memory does not start at address 0");
+    }
     let page_count = first_desc.page_count;
-
-    assert_eq!(phys_start, 0, "Memory does not start at address 0");
     assert!(page_count != 0, "Memory map entry has zero size");
 }

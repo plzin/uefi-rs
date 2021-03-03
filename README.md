@@ -13,20 +13,18 @@ OS loaders, hypervisors and other low-level applications. While it started out
 as x86-specific, it has been adopted on other platforms, such as ARM.
 
 This crate makes it easy to both:
-  - Write UEFI applications in Rust (via the [`x86_64-unknown-uefi`][rustc-uefi] target)
+  - Write UEFI applications in Rust (for `x86_64` or `aarch64`)
   - Call UEFI functions from an OS (usually built with a [custom target][rustc-custom])
 
 The objective is to provide **safe** and **performant** wrappers for UEFI interfaces,
 and allow developers to write idiomatic Rust code.
 
-Check out @gilomendes [blog post on getting started with UEFI in Rust][gm-blog].
+Check out @gil0mendes [blog post on getting started with UEFI in Rust][gm-blog].
 
-**Note**: due to some issues with the Rust compiler, this crate currently works
-and has been tested _only_ with **64-bit** UEFI.
+**Note**: this crate currently has only been tested with **64-bit** UEFI on x86/ARM.
 
 [UEFI]: https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface
-[gm-blog]: https://medium.com/@gil0mendes/an-efi-app-a-bit-rusty-82c36b745f49
-[rustc-uefi]: https://github.com/rust-lang/rust/pull/56769
+[gm-blog]: https://gil0mendes.io/blog/an-efi-app-a-bit-rusty/
 [rustc-custom]: https://doc.rust-lang.org/rustc/targets/custom.html
 
 ![uefi-rs running in QEMU](https://imgur.com/SFPSVuO.png)
