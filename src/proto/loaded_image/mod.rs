@@ -4,7 +4,7 @@
 //! used to wrap an `EFI_DEVICE_PATH_PROTOCOL`.
 
 mod device_path;
-pub use self::device_path::DevicePath;
+pub use self::device_path::*;
 use crate::{
     data_types::{CStr16, Char16},
     proto::Protocol,
